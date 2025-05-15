@@ -42,7 +42,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
         },
       };
     } else if (period) {
-      // Query using LSI: cinemaId + period
+
       params = {
         TableName: process.env.TABLE_NAME,
         IndexName: "periodIx",
@@ -53,7 +53,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
         },
       };
     } else {
-      // Return all movies for the cinemaId
+
       params = {
         TableName: process.env.TABLE_NAME,
         KeyConditionExpression: "cinemaId = :cid",
