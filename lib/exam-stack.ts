@@ -12,15 +12,18 @@ export class ExamStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // NOTE: This table declaration is incomplete, and will cause a deployment to fail.
-    // The correct code will be provided in the exam question.
     const table = new dynamodb.Table(this, "CinemasTable", {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       partitionKey: { name: "cinemaId", type: dynamodb.AttributeType.NUMBER },
+      sortKey: { name: "movieId", type: dynamodb.AttributeType.STRING },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       tableName: "CinemaTable",
     });
 
+    table.addLocalSecondaryIndex({
+      indexName: "periodIx",
+      sortKey: { name: "period", type: dynamodb.AttributeType.STRING },
+    });
 
     const question1Fn = new lambdanode.NodejsFunction(this, "QuestionFn", {
       architecture: lambda.Architecture.ARM_64,
@@ -30,9 +33,14 @@ export class ExamStack extends cdk.Stack {
       memorySize: 128,
       environment: {
         REGION: "eu-west-1",
+        TABLE_NAME: table.tableName,
       },
     });
 
+    // Grant read access to the Lambda
+    table.grantReadData(question1Fn);
+
+    // Seed data
     new custom.AwsCustomResource(this, "moviesddbInitData", {
       onCreate: {
         service: "DynamoDB",
@@ -42,13 +50,14 @@ export class ExamStack extends cdk.Stack {
             [table.tableName]: generateBatch(schedules),
           },
         },
-        physicalResourceId: custom.PhysicalResourceId.of("moviesddbInitData"), //.of(Date.now().toString()),
+        physicalResourceId: custom.PhysicalResourceId.of("moviesddbInitData"),
       },
       policy: custom.AwsCustomResourcePolicy.fromSdkCalls({
         resources: [table.tableArn],
       }),
     });
 
+    // API Gateway setup
     const api = new apig.RestApi(this, "ExamAPI", {
       description: "Exam api",
       deployOptions: {
@@ -62,5 +71,17 @@ export class ExamStack extends cdk.Stack {
       },
     });
 
+    //cinemas/{cinemaId}/movies
+    const cinemas = api.root.addResource("cinemas");
+    const cinemaId = cinemas.addResource("{cinemaId}");
+    const movies = cinemaId.addResource("movies");
+
+    cinemaId.addMethod("GET", new apig.LambdaIntegration(question1Fn))
+    movies.addMethod("GET", new apig.LambdaIntegration(question1Fn));
+
+    // Output API URL
+    new cdk.CfnOutput(this, "APIUrl", {
+      value: api.url ?? "Something went wrong",
+    });
   }
 }

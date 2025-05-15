@@ -5,19 +5,44 @@ import {
   QueryCommand,
   QueryCommandInput,
 } from "@aws-sdk/lib-dynamodb";
-import schema from "../shared/types.schema.json";
+
 const client = createDDbDocClient();
 
 export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
   try {
     console.log("Event: ", JSON.stringify(event));
- 
+
+    const cinemaId = event.pathParameters?.cinemaId;
+    const movieId = event.queryStringParameters?.movieId;
+
+    if (!cinemaId) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: "cinemaId is required in path" }),
+      };
+    }
+
+    const params: QueryCommandInput = {
+      TableName: process.env.TABLE_NAME,
+      KeyConditionExpression: "cinemaId = :cid",
+      ExpressionAttributeValues: {
+        ":cid": Number(cinemaId),
+      },
+    };
+
+    if (movieId) {
+      params.KeyConditionExpression += " AND movieId = :mid";
+      params.ExpressionAttributeValues![':mid'] = movieId;
+    }
+
+    const result = await client.send(new QueryCommand(params));
+
     return {
       statusCode: 200,
       headers: {
         "content-type": "application/json",
       },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ data: result.Items }),
     };
   } catch (error: any) {
     console.log(JSON.stringify(error));
@@ -26,7 +51,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
       headers: {
         "content-type": "application/json",
       },
-      body: JSON.stringify({ error }),
+      body: JSON.stringify({ error: error.message }),
     };
   }
 };
